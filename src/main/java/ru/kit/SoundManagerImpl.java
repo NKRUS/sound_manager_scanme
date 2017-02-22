@@ -25,7 +25,8 @@ class SoundManagerImpl implements SoundManager {
     private AudioClip voiceCurrentSound, functionalCurrentSound, backgroundSimpleCurrentSound;
     private MediaPlayer backgroundCurrentSound;
     private Service<Void> checkQueueService;
-    private List<Timeline> timelineList = new ArrayList<>();
+    private Map<Integer,Timeline> timelineMap = new HashMap<>();
+    private static int idCounter = 0;
 
     SoundManagerImpl() {
         queueMap.put(SoundType.BACKGROUND,new LinkedList<>());
@@ -92,10 +93,10 @@ class SoundManagerImpl implements SoundManager {
 
         Timeline timeline = new Timeline(new KeyFrame(Duration.millis(millis)));
         System.out.println("Sound: " +soundPath+ " added to Timeline on track - " + soundType+ " with delay: " + millis + " ms");
-        timelineList.add(timeline);
-        int listIndex = timelineList.size()-1;
+        int index = idCounter++;
+        timelineMap.put(index,timeline);
         timeline.setOnFinished(ae -> {
-            timelineList.remove(listIndex);
+            timelineMap.remove(index);
             System.out.println("Sound: " +soundPath+ " removed from Timeline, track: " + soundType);
             playSound(soundPath, soundType, nodes);
         });
@@ -200,7 +201,7 @@ class SoundManagerImpl implements SoundManager {
 
     @Override
     public void stopAllSounds() {
-        for (Timeline timeline :timelineList) {
+        for (Timeline timeline :timelineMap.values()) {
             if(timeline!=null) timeline.stop();
         }
         for (SoundType soundType : SoundType.values()){
@@ -296,12 +297,13 @@ class SoundManagerImpl implements SoundManager {
 
     @Override
     public void pushSoundToTrackQueueWithDelay(String soundPath, SoundType soundType, long millis, Node... nodes) {
+
         Timeline timeline = new Timeline(new KeyFrame(Duration.millis(millis)));
-        timelineList.add(timeline);
         System.out.println("Sound: " +soundPath+ " added to Timeline on track - " + soundType+ " with delay: " + millis + " ms");
-        int listIndex = timelineList.size()-1;
+        int index = idCounter++;
+        timelineMap.put(index,timeline);
         timeline.setOnFinished(ae -> {
-            timelineList.remove(listIndex);
+            timelineMap.remove(index);
             System.out.println("Sound: " +soundPath+ " removed from Timeline, track: " + soundType);
             pushSoundToTrackQueue(soundPath, soundType, nodes);
         });

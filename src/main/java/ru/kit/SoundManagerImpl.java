@@ -10,6 +10,8 @@ import javafx.scene.media.AudioClip;
 import javafx.scene.media.Media;
 import javafx.scene.media.MediaPlayer;
 import javafx.util.Duration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.util.*;
@@ -20,6 +22,8 @@ import java.util.concurrent.Executors;
  * Created by Kit on 17.02.2017.
  */
 class SoundManagerImpl implements SoundManager {
+    private static Logger logger = LoggerFactory.getLogger(SoundManagerImpl.class);
+
     private ExecutorService soundPool;
     private volatile Map<SoundType,Queue<Sound>> queueMap = new HashMap<>();
     private AudioClip voiceCurrentSound, functionalCurrentSound, backgroundSimpleCurrentSound;
@@ -27,6 +31,7 @@ class SoundManagerImpl implements SoundManager {
     private Service<Void> checkQueueService;
     private Map<Integer,Timeline> timelineMap = new HashMap<>();
     private static int idCounter = 0;
+    private double[] volumes = {1,1,1,1};
 
     SoundManagerImpl() {
         queueMap.put(SoundType.BACKGROUND,new LinkedList<>());
@@ -39,17 +44,12 @@ class SoundManagerImpl implements SoundManager {
                 return new Task<Void>(){
                     @Override
                     protected Void call() throws Exception {
-                        System.out.println("checkQueueTask - started");
-                        int overalQueueCount;
-
+                        logger.info("checkQueueTask - started");
                         do {
-                            overalQueueCount = 0;
                             for (SoundType soundType : SoundType.values()){
                                 if(isAnyOnQueue(soundType)){
-                                    overalQueueCount++;
                                     if(!currentlyPlaying(soundType)){
                                         Sound sound = queueMap.get(soundType).remove();
-                                        overalQueueCount--;
                                         if(sound.isNodes()){
                                             play(sound.soundPath,sound.soundType,sound.getNodes());
                                         }else {
@@ -58,10 +58,9 @@ class SoundManagerImpl implements SoundManager {
                                     }
                                 }
                             }
-                            //System.out.println("Overall queue count: "+overalQueueCount);
                             Thread.sleep(20);
                         }while (!isQueueMapEmpty());
-                        System.out.println("checkQueueTask - ended");
+                        logger.info("checkQueueTask - ended");
                         return null;
                     }
                 };
@@ -78,7 +77,6 @@ class SoundManagerImpl implements SoundManager {
 
     @Override
     public void playSound(String soundPath, SoundType soundType, Node... nodes) {
-        emptyTrackQueue(soundType);
         stop(soundType);
         if(nodes.length==0){
             pushSoundToTrackQueue(soundPath,soundType);
@@ -92,12 +90,12 @@ class SoundManagerImpl implements SoundManager {
     public void playSoundWithDelay(String soundPath, SoundType soundType, long millis, Node... nodes) {
 
         Timeline timeline = new Timeline(new KeyFrame(Duration.millis(millis)));
-        System.out.println("Sound: " +soundPath+ " added to Timeline on track - " + soundType+ " with delay: " + millis + " ms");
+        logger.info("Sound: " +soundPath+ " added to Timeline on track - " + soundType+ " with delay: " + millis + " ms");
         int index = idCounter++;
         timelineMap.put(index,timeline);
         timeline.setOnFinished(ae -> {
             timelineMap.remove(index);
-            System.out.println("Sound: " +soundPath+ " removed from Timeline, track: " + soundType);
+            logger.info("Sound: " +soundPath+ " removed from Timeline, track: " + soundType);
             playSound(soundPath, soundType, nodes);
         });
         timeline.play();
@@ -114,32 +112,46 @@ class SoundManagerImpl implements SoundManager {
                 }
                 Media sound = new Media(new File(soundPath).toURI().toString());
                 backgroundCurrentSound = new MediaPlayer(sound);
-                backgroundCurrentSound.setOnEndOfMedia(() -> backgroundCurrentSound.stop());
-                soundPool.execute(() -> backgroundCurrentSound.play());
+                backgroundCurrentSound.setOnEndOfMedia(() -> {
+                    if(backgroundCurrentSound!=null) backgroundCurrentSound.stop();
+                });
+                soundPool.execute(() -> {
+                    backgroundCurrentSound.setVolume(volumes[soundType.ordinal()]);
+                    backgroundCurrentSound.play();
+                });
                 break;
 
             case FUNCTIONAL:
                 if (functionalCurrentSound != null) functionalCurrentSound.stop();
                 functionalCurrentSound = new AudioClip(new File(soundPath).toURI().toString());
-                soundPool.execute(() -> functionalCurrentSound.play());
+                soundPool.execute(() -> {
+                    functionalCurrentSound.setVolume(volumes[soundType.ordinal()]);
+                    functionalCurrentSound.play();
+                });
                 break;
             case VOICE:
                 if (voiceCurrentSound != null) voiceCurrentSound.stop();
                 voiceCurrentSound = new AudioClip(new File(soundPath).toURI().toString());
-                soundPool.execute(() -> voiceCurrentSound.play());
+                soundPool.execute(() -> {
+                    voiceCurrentSound.setVolume(volumes[soundType.ordinal()]);
+                    voiceCurrentSound.play();
+                });
                 break;
             case BACKGROUND_SIMPLE:
                 if (backgroundSimpleCurrentSound != null) backgroundSimpleCurrentSound.stop();
                 backgroundSimpleCurrentSound = new AudioClip(new File(soundPath).toURI().toString());
-                soundPool.execute(() -> backgroundSimpleCurrentSound.play());
+                soundPool.execute(() -> {
+                    backgroundSimpleCurrentSound.setVolume(volumes[soundType.ordinal()]);
+                    backgroundSimpleCurrentSound.play();
+                });
                 break;
         }
-        System.out.println("Starting to play sound: " + soundPath + " with type: " + soundType.toString());
+        logger.info("Starting to play sound: " + soundPath + " with type: " + soundType.toString());
     }
     private void play(String soundPath, SoundType soundType, Node... nodes){
         initSoundPool();
         soundPool.execute(() -> {
-            System.out.println("Blocking sound " + soundType + " - LOCKED");
+            logger.info("Blocking sound " + soundType + " - LOCKED");
             play(soundPath, soundType);
             try {
                 while (currentlyPlaying(soundType)) {
@@ -151,12 +163,12 @@ class SoundManagerImpl implements SoundManager {
 
             } catch (InterruptedException e) {
                 stop(soundType);
-                System.err.println("Blocking sound: " + soundPath + " with type: " + soundType + " - stopped");
+                logger.error("Blocking sound: " + soundPath + " with type: " + soundType + " - stopped");
             } finally {
                 for (Node node : nodes) {
                     node.setDisable(false);
                 }
-                System.out.println("Blocking sound "+ soundType+" - UNLOCKED");
+                logger.info("Blocking sound "+ soundType+" - UNLOCKED");
             }
         });
     }
@@ -164,7 +176,7 @@ class SoundManagerImpl implements SoundManager {
     private void initSoundPool() {
         if (soundPool == null || soundPool.isShutdown()) {
             soundPool = Executors.newFixedThreadPool(SoundType.values().length);//Количество потоков = количество типов дорожек
-            System.out.println("SoundManager: Executor Service created with " + SoundType.values().length + " slots");
+            logger.info("SoundManager: Executor Service created with " + SoundType.values().length + " slots");
         }
     }
 
@@ -175,25 +187,25 @@ class SoundManagerImpl implements SoundManager {
             case BACKGROUND:
                 if (backgroundCurrentSound != null && !backgroundCurrentSound.getStatus().equals(MediaPlayer.Status.DISPOSED)){
                     backgroundCurrentSound.dispose();
-                    System.err.println("BACKGROUND sound has stopped");
+                    logger.error("BACKGROUND sound has stopped");
                 }
                 break;
             case FUNCTIONAL:
                 if (functionalCurrentSound != null){
                     functionalCurrentSound.stop();
-                    System.err.println("FUNCTIONAL sound has stopped");
+                    logger.error("FUNCTIONAL sound has stopped");
                 }
                 break;
             case VOICE:
                 if (voiceCurrentSound != null){
                     voiceCurrentSound.stop();
-                    System.err.println("VOICE sound has stopped");
+                    logger.error("VOICE sound has stopped");
                 }
                 break;
             case BACKGROUND_SIMPLE:
                 if (backgroundSimpleCurrentSound != null){
                     backgroundSimpleCurrentSound.stop();
-                    System.err.println("BACKGROUND_SIMPLE sound has stopped");
+                    logger.error("BACKGROUND_SIMPLE sound has stopped");
                 }
                 break;
         }
@@ -218,6 +230,7 @@ class SoundManagerImpl implements SoundManager {
     @Override
     public void disposeAllSounds() {
         stopAllSounds();
+        resetVolume();
         backgroundCurrentSound = null;
         backgroundSimpleCurrentSound = null;
         functionalCurrentSound = null;
@@ -228,8 +241,9 @@ class SoundManagerImpl implements SoundManager {
 
     @Override
     public boolean isPlaying(SoundType soundType) {
+        if (!queueMap.get(soundType).isEmpty()) return true;
         boolean isPlaying = currentlyPlaying(soundType);
-        System.out.println(soundType.toString() + " sound " + (isPlaying ? "Active" : "Not Active"));
+        logger.info(soundType.toString() + " sound " + (isPlaying ? "Active" : "Not Active"));
         return isPlaying;
     }
 
@@ -249,23 +263,20 @@ class SoundManagerImpl implements SoundManager {
         }
         switch (soundType) {
             case BACKGROUND:
-                if (backgroundCurrentSound != null && !backgroundCurrentSound.getStatus().equals(MediaPlayer.Status.DISPOSED)) {
+                if ((backgroundCurrentSound != null && !backgroundCurrentSound.getStatus().equals(MediaPlayer.Status.DISPOSED))) {
                     return backgroundCurrentSound.getStatus().equals(MediaPlayer.Status.PLAYING);
                 }
                 break;
             case FUNCTIONAL:
-
                 if (functionalCurrentSound != null) {
                     return functionalCurrentSound.isPlaying();
                 }
                 break;
             case VOICE:
-
                 if (voiceCurrentSound != null) {
                     return voiceCurrentSound.isPlaying();
                 }
                 break;
-
             case BACKGROUND_SIMPLE:
                 if (backgroundSimpleCurrentSound != null) {
                     return backgroundSimpleCurrentSound.isPlaying();
@@ -292,19 +303,19 @@ class SoundManagerImpl implements SoundManager {
             checkQueueService.reset();
             checkQueueService.start();
         }
-        System.out.println("Sound: " + soundPath + " added to " + soundType.toString() + " queue");
+        logger.info("Sound: " + soundPath + " added to " + soundType.toString() + " queue");
     }
 
     @Override
     public void pushSoundToTrackQueueWithDelay(String soundPath, SoundType soundType, long millis, Node... nodes) {
 
         Timeline timeline = new Timeline(new KeyFrame(Duration.millis(millis)));
-        System.out.println("Sound: " +soundPath+ " added to Timeline on track - " + soundType+ " with delay: " + millis + " ms");
+        logger.info("Sound: " +soundPath+ " added to Timeline on track - " + soundType+ " with delay: " + millis + " ms");
         int index = idCounter++;
         timelineMap.put(index,timeline);
         timeline.setOnFinished(ae -> {
             timelineMap.remove(index);
-            System.out.println("Sound: " +soundPath+ " removed from Timeline, track: " + soundType);
+            logger.info("Sound: " +soundPath+ " removed from Timeline, track: " + soundType);
             pushSoundToTrackQueue(soundPath, soundType, nodes);
         });
         timeline.play();
@@ -313,7 +324,7 @@ class SoundManagerImpl implements SoundManager {
     @Override
     public void emptyTrackQueue(SoundType soundType) {
         queueMap.get(soundType).clear();
-        System.out.println(soundType.toString() + " track queue - cleared");
+        logger.info(soundType.toString() + " track queue - cleared");
     }
 
     /**
@@ -325,6 +336,46 @@ class SoundManagerImpl implements SoundManager {
     @Override
     public boolean isAnyOnQueue(SoundType soundType) {
         return queueMap.get(soundType).size()!=0;
+    }
+
+    @Override
+    public void setVolume(SoundType soundType, double value) {
+        if(value>1) value = 1;
+        else if(value<0) value = 0;
+
+        volumes[soundType.ordinal()] = value;
+
+        if(currentlyPlaying(soundType)){
+            switch (soundType) {
+                case BACKGROUND:
+                    backgroundCurrentSound.setVolume(value);
+                    break;
+                case FUNCTIONAL:
+
+                    functionalCurrentSound.setVolume(value);
+                    break;
+                case VOICE:
+
+                    voiceCurrentSound.setVolume(value);
+                    break;
+
+                case BACKGROUND_SIMPLE:
+                    backgroundSimpleCurrentSound.setVolume(value);
+                    break;
+            }
+        }
+    }
+
+    @Override
+    public double getVolume(SoundType soundType) {
+        return volumes[soundType.ordinal()];
+    }
+
+    @Override
+    public void resetVolume() {
+        for (int i = 0; i < volumes.length; i++) {
+            volumes[i] = 1;
+        }
     }
 
     private static class Sound{

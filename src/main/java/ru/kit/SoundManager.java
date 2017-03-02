@@ -27,6 +27,12 @@ public interface SoundManager {
 
     boolean isAnyOnQueue(SoundType soundType);
 
+    void setVolume(SoundType soundType, double value);
+
+    double getVolume(SoundType soundType);
+
+    void resetVolume();
+
     enum SoundType{
         /**
          * Background playing sound. Currently, only one sound of this type can be played.

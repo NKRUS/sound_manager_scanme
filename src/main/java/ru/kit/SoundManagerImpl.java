@@ -10,19 +10,19 @@ import javafx.scene.media.AudioClip;
 import javafx.scene.media.Media;
 import javafx.scene.media.MediaPlayer;
 import javafx.util.Duration;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Created by Kit on 17.02.2017.
  */
 class SoundManagerImpl implements SoundManager {
-    private static Logger logger = LoggerFactory.getLogger(SoundManagerImpl.class);
+    private static Logger logger = Logger.getLogger(SoundManagerImpl.class.getName());
 
     private ExecutorService soundPool;
     private volatile Map<SoundType,Queue<Sound>> queueMap = new HashMap<>();
@@ -163,7 +163,7 @@ class SoundManagerImpl implements SoundManager {
 
             } catch (InterruptedException e) {
                 stop(soundType);
-                logger.error("Blocking sound: " + soundPath + " with type: " + soundType + " - stopped");
+                logger.log(Level.WARNING,"Blocking sound: " + soundPath + " with type: " + soundType + " - stopped");
             } finally {
                 for (Node node : nodes) {
                     node.setDisable(false);
@@ -187,25 +187,25 @@ class SoundManagerImpl implements SoundManager {
             case BACKGROUND:
                 if (backgroundCurrentSound != null && !backgroundCurrentSound.getStatus().equals(MediaPlayer.Status.DISPOSED)){
                     backgroundCurrentSound.dispose();
-                    logger.error("BACKGROUND sound has stopped");
+                    logger.log(Level.WARNING,"BACKGROUND sound has stopped");
                 }
                 break;
             case FUNCTIONAL:
                 if (functionalCurrentSound != null){
                     functionalCurrentSound.stop();
-                    logger.error("FUNCTIONAL sound has stopped");
+                    logger.log(Level.WARNING,"FUNCTIONAL sound has stopped");
                 }
                 break;
             case VOICE:
                 if (voiceCurrentSound != null){
                     voiceCurrentSound.stop();
-                    logger.error("VOICE sound has stopped");
+                    logger.log(Level.WARNING,"VOICE sound has stopped");
                 }
                 break;
             case BACKGROUND_SIMPLE:
                 if (backgroundSimpleCurrentSound != null){
                     backgroundSimpleCurrentSound.stop();
-                    logger.error("BACKGROUND_SIMPLE sound has stopped");
+                    logger.log(Level.WARNING,"BACKGROUND_SIMPLE sound has stopped");
                 }
                 break;
         }
